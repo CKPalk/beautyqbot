@@ -1,6 +1,6 @@
 {
   "name": "beautyqbot",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A Facebook messenger service to get your beauty questions answered.",
   "main": "app.js",
   "scripts": {
