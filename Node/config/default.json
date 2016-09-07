@@ -1,6 +1,11 @@
 {
-  "appSecret"       : "8c4e9cb9d59bc42179bf0c3379b1dc5b",
-  "validationToken" : "validation_tokens_are_for_chumps",
-  "pageAccessToken" : "EAAZADEM69ztQBAD2hqz5kZBbxUZCaXRBcPWGSOEyUQiKxnjDi0HIrWwBkZB1UelLx6OoIyxAF5WBmSPZAnC5X2EA9CGTYwy3TGg5X53em00fDTXAdZCfkedWZB0uryQhbKXc9IhYOlilnuRoBudzyKT8RwzRxD97ZB4FURQC8QHdcgZDZD",
+  "messenger" : {
+    "appSecret"       : "8c4e9cb9d59bc42179bf0c3379b1dc5b",
+    "validationToken" : "validation_tokens_are_for_chumps",
+    "pageAccessToken" : "EAAZADEM69ztQBAD2hqz5kZBbxUZCaXRBcPWGSOEyUQiKxnjDi0HIrWwBkZB1UelLx6OoIyxAF5WBmSPZAnC5X2EA9CGTYwy3TGg5X53em00fDTXAdZCfkedWZB0uryQhbKXc9IhYOlilnuRoBudzyKT8RwzRxD97ZB4FURQC8QHdcgZDZD"
+  },
+  "witai" : {
+    "serverAccessToken" : "2XONSMGDYNNOKQO2ZO7B3GP5YKUQNNA5"
+  },
   "serverURL"       : "/Node/public"
 }
