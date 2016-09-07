@@ -9,7 +9,8 @@
 const
   express    = require('express'),
   bodyParser = require('body-parser'),
-  config     = require('config');
+  config     = require('config'),
+  crypto     = require('crypto');
 
 
 
@@ -19,8 +20,9 @@ var app = express();
 
 
 // App middleware
-app.use(bodyParser.json());
+app.use(bodyParser.json({ verify: verifyRequestSignature }));
 app.use(express.static('public'));
+app.set('PORT', process.env.PORT || 8000);
 
 
 
@@ -43,7 +45,7 @@ const
 
 // Ensure these required values have been found
 if (!(APP_SECRET && VALIDATION_TOKEN && PAGE_ACCESS_TOKEN && SERVER_URL)) {
-  console.err("Missing config values");
+  console.error("Missing config values");
   process.exit(1);
 }
 else {
@@ -53,3 +55,95 @@ else {
               "\nPAGE_ACCESS_TOKEN:", PAGE_ACCESS_TOKEN,
               "\nSERVER_URL:", SERVER_URL);
 }
+
+
+
+/* FACEBOOK WEBHOOK VERIFICATION */
+app.get('/webhook', (req, res) => {
+  if (req.query['hub.mode'] === 'subscribe' &&
+      req.query['hub.verify_token'] === VALIDATION_TOKEN) {
+    console.log('Validating Webhook');
+    res.status(200).send(req.query['hub.challenge']);
+  } else {
+    console.error('Failed webhook validation. Ensure validation tokens match');
+    res.sendStatus(403);
+  }
+});
+
+
+
+/* HANDLE MESSENGER POST CALLBACKS */
+app.post('/webhook', (req, res) => {
+  const data = req.body;
+
+  console.log(data);
+  if (data.object == 'page') {
+    // Iterate over each page entry
+    data.entry.forEach((pageEntry) => {
+      const pageID = pageEntry.id;
+      const timeOfEvent = pageEntry.time;
+
+      // Iterate over each message from page
+      pageEntry.messaging.forEach((messagingEvent) => {
+        if      (messagingEvent.optin)            { /* Handle authentication message event */ }
+        else if (messagingEvent.message)          { /* Handle recieved message */ }
+        else if (messagingEvent.delivery)         { /* Handle delivery configmation event */ }
+        else if (messagingEvent.read)             { /* Handle read receipt event */ }
+        else if (messagingEvent.account_linking)  { /* Handle account linking event if ever implemented */ }
+        else { console.log('Webhook recieved unknown messaging event:', messagingEvent); }
+      });
+
+    });
+
+    // Facebook requires <20s successful response, otherwise the request will time out
+    res.sendStatus(200);
+  }
+});
+
+
+/* Verify that the callback came from Facebook */
+function verifyRequestSignature(req, res, buf) {
+  const signature = req.headers['x-hub-signature'];
+  console.log("Verify Request Signature buf:", buf);
+
+  if (!signature) {
+    console.error('Couldn\'t locate request signature');
+  } else {
+    console.log('Attempting to validate the request signature', signature);
+    const elements = signature.split('=');
+    const method = elements[0];
+    const signatureHash = elements[1];
+
+    var expectedHash = crypto.createHmac('sha1', APP_SECRET)
+                        .update(buf)
+                        .digest('hex');
+
+    if (signatureHash != expectedHash) {
+      throw new Error("Couldn't validate the request signature, expected hash does not match.");
+    }
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+app.listen(app.get('PORT'), () => {
+  console.log('Node app running on port', app.get('PORT'));
+});
