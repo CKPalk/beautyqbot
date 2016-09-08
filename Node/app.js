@@ -272,9 +272,7 @@ function verifyRequestSignature(req, res, buf) {
     console.error('Couldn\'t locate request signature');
   } else {
     console.log('Attempting to validate the request signature', signature);
-    const elements = signature.split('=');
-    const method = elements[0];
-    const signatureHash = elements[1];
+    const [method, signatureHash] = signature.split('=');
 
     var expectedHash = crypto.createHmac('sha1', MES_APP_SECRET)
                         .update(buf)
