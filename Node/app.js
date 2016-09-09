@@ -6,14 +6,18 @@
 
 'use strict';
 
+// NPM
 const
-  express      = require('express'),
-  bodyParser   = require('body-parser'),
-  config       = require('config'),
-  crypto       = require('crypto'),
-  request      = require('request'),
-  { Wit, log } = require('node-wit'),
-  exampleQs    = require('./resources/example-qs.json');
+  express    = require('express'),
+  bodyParser = require('body-parser'),
+  config     = require('config'),
+  crypto     = require('crypto'),
+  request    = require('request'),
+  { Wit, log }    = require('node-wit');
+
+// Local
+const
+  exampleQs  = require('./resources/example-qs.json');
 
 
 
@@ -95,17 +99,30 @@ function findOrCreateSession(fbid) {
   return sessionId;
 }
 
+function extractConfidence(entities) {
+  const confidence = entities.intent[0].confidence;
+  if (confidence) {
+    return confidence;
+  } else {
+    console.error(`Could not find a confidence score.`);
+  }
+}
+
+function randomArrayIndex(listLength) {
+  return Math.floor(Math.random() * listLength);
+}
+
 
 
 // Bot Actions
 const actions = {
+
   send({sessionId}, {text}) {
     const recipientId = sessions[sessionId].fbid;
     if (recipientId) {
       // Forward our bot response
       // Return a promise when done sending
       return new Promise((resolve, reject) => {
-        console.log(`Sending ${text} from actions.send`);
         sendTextMessage(recipientId, text);
       })
       .then(() => null)
@@ -116,27 +133,40 @@ const actions = {
       return Promise.resolve();
     }
   },
-  reset({sessionId, context, text, entities}) {
-    return Promise.resolve(context);
-  },
+
   showHelp({sessionId, context, text, entities}) {
     return new Promise((resolve, reject) => {
+
+      const confidence = extractConfidence(entities);
+      console.log(`Show help came back with ${confidence * 100}% confidence`);
 
       // We can check if they've asked for help a lot and
       // send them to a rep. if necessary
 
       // Grabbing a random example query for the users help message
-      const exampleQuery = exampleQs.help[Math.floor(Math.random() * exampleQs.help.length)];
+      // Adding it to the current context
+      const exampleQuery = exampleQs.help[randomArrayIndex(exampleQs.help.length)] ||
+                            "I'm looking for some fresh nail art ideas!"; // Default example
       const newContext = Object.assign({exampleQuery}, context);
-      //context.exampleQuestion = 'This is where we would put a question.';
-
-      console.log(`Session ${sessionId} received ${text}`);
-      console.log(`The current context is ${JSON.stringify(newContext)}`);
-      console.log(`Wit extracted ${JSON.stringify(entities)}`);
 
       return resolve(newContext);
     });
-  }
+  },
+
+  updateCategory({sessionId, context, text, entities}) {
+    return new Promise((resolve, reject) => {
+      const category = entities.intent[0].value;
+      const newContext = Object.assign({category}, context);
+      return resolve(newContext);
+    });
+  },
+
+  findStylist({sessionId, context, text, entities}) {
+    console.log(`Find stylist called with context: ${JSON.stringify(context)}`);
+    sendTextMessage(sessions[sessionId].fbid, '~ DISPLAY STYLIST RESULTS ~');
+    return Promise.resolve(context);
+  },
+
   // Custom Action handling here
 };
 
@@ -148,6 +178,7 @@ const wit_client = new Wit({
   actions,
   logger: new log.Logger(log.DEBUG)
 });
+
 
 
 
@@ -178,8 +209,6 @@ app.get('/webhook', (req, res) => {
 */
 app.post('/webhook', (req, res) => {
   const data = req.body;
-
-  console.log('data:', JSON.stringify(data) );
 
   if (data.object == 'page') {
     // Iterate over each page entry
@@ -216,20 +245,23 @@ app.post('/webhook', (req, res) => {
 function receivedMessageEvent(event) {
   const senderID    = event.sender.id;
   const recipientID = event.recipient.id;
-
   const timestamp   = event.timestamp;
-
 
   // Retrieve or create a session for the user
   const sessionID = findOrCreateSession(senderID);
 
   // Unwrap the content of the message
-  const {text, attachments} = event.message;
+  const {is_echo, text, attachments} = event.message;
 
   if (attachments) {
     sendTextMessage(senderID, `Sorry, I can only process text for now.`)
   } else if (text) {
     // Text message recieved
+
+    if (is_echo) {
+      console.log(`This sender is the wit bot. Who said ${text}`);
+      return;
+    }
 
     // Forward the message to wit.ai bot if the senderID is not the bots senderID
     // This runs all actions until our bot has nothing left to do
