@@ -124,15 +124,15 @@ const actions = {
       // Return a promise when done sending
       return new Promise((resolve, reject) => {
         sendTextMessage(recipientId, text);
-      })
-      .then(() => null)
-      .catch(console.error);
+      }).catch(console.error);
 
     } else {
       console.error(`Couldn't find user for session: ${sessionId}`);
       return Promise.resolve();
     }
   },
+
+  // Custom Action handling here
 
   showHelp({sessionId, context, text, entities}) {
     return new Promise((resolve, reject) => {
@@ -156,18 +156,19 @@ const actions = {
   updateCategory({sessionId, context, text, entities}) {
     return new Promise((resolve, reject) => {
       const category = entities.intent[0].value;
-      const newContext = Object.assign({category}, context);
+      const newContext = Object.assign({category, 'Yes':true}, context);
       return resolve(newContext);
     });
   },
 
   findStylist({sessionId, context, text, entities}) {
-    console.log(`Find stylist called with context: ${JSON.stringify(context)}`);
-    sendTextMessage(sessions[sessionId].fbid, '~ DISPLAY STYLIST RESULTS ~');
-    return Promise.resolve(context);
+    return new Promise((resolve, reject) => {
+      console.log(`Find stylist called with context: ${JSON.stringify(context)}`);
+      sendTextMessage(sessions[sessionId].fbid, '~ DISPLAY STYLIST RESULTS ~');
+      return resolve(context);
+    })
   },
 
-  // Custom Action handling here
 };
 
 
@@ -259,7 +260,7 @@ function receivedMessageEvent(event) {
     // Text message recieved
 
     if (is_echo) {
-      console.log(`This sender is the wit bot. Who said ${text}`);
+      // This sender is the wit bot
       return;
     }
 
@@ -272,12 +273,9 @@ function receivedMessageEvent(event) {
     ).then((context) => {
       // The bot has done everything it has to do
       // Now it's waiting for further message to proceed.
-      console.log(`Waiting for next user messages`);
+      console.log(`Waiting for next user message with context: ${JSON.stringify(context)}`);
 
-      // Here check the session state and reset if necessary
-      // if (context['done']) { delete sessions[sessionID]; }
-
-      // Update context state
+      // Update context state if needed
       sessions[sessionID].context = context;
     })
     .catch((err) => {
@@ -379,7 +377,7 @@ function callSendAPI(messageData) {
       const messageId = body.message_id;
 
       if (messageId) {
-        console.log('Successfully sent message with id %s to recipient %s', messageId, recipientId);
+        // console.log('Successfully sent message with id %s to recipient %s', messageId, recipientId);
       } else {
         console.log('Successfully call Sent API for recipient %s', recipientId);
       }
