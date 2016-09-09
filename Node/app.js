@@ -7,12 +7,14 @@
 'use strict';
 
 const
-  express    = require('express'),
-  bodyParser = require('body-parser'),
-  config     = require('config'),
-  crypto     = require('crypto'),
-  request    = require('request'),
-  {Wit}      = require('node-wit');
+  express      = require('express'),
+  bodyParser   = require('body-parser'),
+  config       = require('config'),
+  crypto       = require('crypto'),
+  request      = require('request'),
+  { Wit, log } = require('node-wit'),
+  exampleQs    = require('./resources/example-qs.json');
+
 
 
 
@@ -24,6 +26,8 @@ var app = express();
 // App middleware
 app.use(bodyParser.json({ verify: verifyRequestSignature }));
 app.use(express.static('public'));
+
+// Port definied by Modulus host, local testing on :5000
 app.set('PORT', process.env.PORT || 5000);
 
 
@@ -69,9 +73,81 @@ else {
 }
 
 
-/* SETUP WIT.AI
-*/
-const wit_client = new Wit({ accessToken: WIT_SERVER_ACCESS_TOKEN });
+// ----------------------------------------------------------------------------
+// Wit.ai bot
+
+// Track client sessions with context
+// { sessionId : {fbid: facebookUserId, context: sessionState} }
+const sessions = {};
+
+
+function findOrCreateSession(fbid) {
+  let sessionId;
+  Object.keys(sessions).forEach(key => {
+    if (sessions[key].fbid == fbid) {
+      sessionId = key;
+    }
+  });
+  if (!sessionId) {
+    sessionId = new Date().toISOString();
+    sessions[sessionId] = {fbid: fbid, context: {}};
+  }
+  return sessionId;
+}
+
+
+
+// Bot Actions
+const actions = {
+  send({sessionId}, {text}) {
+    const recipientId = sessions[sessionId].fbid;
+    if (recipientId) {
+      // Forward our bot response
+      // Return a promise when done sending
+      return new Promise((resolve, reject) => {
+        console.log(`Sending ${text} from actions.send`);
+        sendTextMessage(recipientId, text);
+      })
+      .then(() => null)
+      .catch(console.error);
+
+    } else {
+      console.error(`Couldn't find user for session: ${sessionId}`);
+      return Promise.resolve();
+    }
+  },
+  reset({sessionId, context, text, entities}) {
+    return Promise.resolve(context);
+  },
+  showHelp({sessionId, context, text, entities}) {
+    return new Promise((resolve, reject) => {
+
+      // We can check if they've asked for help a lot and
+      // send them to a rep. if necessary
+
+      // Grabbing a random example query for the users help message
+      const exampleQuery = exampleQs.help[Math.floor(Math.random() * exampleQs.help.length)];
+      const newContext = Object.assign({exampleQuery}, context);
+      //context.exampleQuestion = 'This is where we would put a question.';
+
+      console.log(`Session ${sessionId} received ${text}`);
+      console.log(`The current context is ${JSON.stringify(newContext)}`);
+      console.log(`Wit extracted ${JSON.stringify(entities)}`);
+
+      return resolve(newContext);
+    });
+  }
+  // Custom Action handling here
+};
+
+
+
+
+const wit_client = new Wit({
+  accessToken: WIT_SERVER_ACCESS_TOKEN,
+  actions,
+  logger: new log.Logger(log.DEBUG)
+});
 
 
 
@@ -98,10 +174,12 @@ app.get('/webhook', (req, res) => {
 
 
 
-/* HANDLE MESSENGER POST CALLBACKS
+/* HANDLE MESSENGER EVENTS
 */
 app.post('/webhook', (req, res) => {
   const data = req.body;
+
+  console.log('data:', JSON.stringify(data) );
 
   if (data.object == 'page') {
     // Iterate over each page entry
@@ -131,34 +209,55 @@ app.post('/webhook', (req, res) => {
 /* CALLBACK HANDLERS */
 
 
-
 /** Message Event
  * 		Event called when a message is sent to your page.
  * 		https://developers.facebook.com/docs/messenger-platform/webhook-reference/message-received
 */
 function receivedMessageEvent(event) {
-  const senderID = event.sender.id;
+  const senderID    = event.sender.id;
   const recipientID = event.recipient.id;
 
-  const timestamp = event.timestamp;
-  const message = event.message.text;
-
-  console.log(timestamp + '|  ', senderID, '->', recipientID + ':', message);
+  const timestamp   = event.timestamp;
 
 
-  wit_client.converse(senderID, message, {})
-    .then((data) => {
-      console.log('Yay, got Wit.ai response:', JSON.stringify(data));
-      sendTextMessage(senderID, JSON.stringify(data));
+  // Retrieve or create a session for the user
+  const sessionID = findOrCreateSession(senderID);
+
+  // Unwrap the content of the message
+  const {text, attachments} = event.message;
+
+  if (attachments) {
+    sendTextMessage(senderID, `Sorry, I can only process text for now.`)
+  } else if (text) {
+    // Text message recieved
+
+    // Forward the message to wit.ai bot if the senderID is not the bots senderID
+    // This runs all actions until our bot has nothing left to do
+    wit_client.runActions(
+      sessionID,
+      text,
+      sessions[sessionID].context
+    ).then((context) => {
+      // The bot has done everything it has to do
+      // Now it's waiting for further message to proceed.
+      console.log(`Waiting for next user messages`);
+
+      // Here check the session state and reset if necessary
+      // if (context['done']) { delete sessions[sessionID]; }
+
+      // Update context state
+      sessions[sessionID].context = context;
     })
-    .catch(console.error);
-
-
-
-
-  // sendTextMessage(senderID, "Did you say \""+message+"\"?");
+    .catch((err) => {
+      console.error(`Got an error from Wit: ${err.stack || err}`);
+    });
+  } else {
+    console.log(`recieved event ${JSON.stringify(event)}`);
+  }
 
 }
+
+
 
 
 /** Authorization Event
@@ -266,12 +365,10 @@ function callSendAPI(messageData) {
 */
 function verifyRequestSignature(req, res, buf) {
   const signature = req.headers['x-hub-signature'];
-  console.log("Verify Request Signature buf:", buf);
 
   if (!signature) {
     console.error('Couldn\'t locate request signature');
   } else {
-    console.log('Attempting to validate the request signature', signature);
     const [method, signatureHash] = signature.split('=');
 
     var expectedHash = crypto.createHmac('sha1', MES_APP_SECRET)
